@@ -134,3 +134,29 @@ Revised next steps:
 5. If needed, compare builds immediately before and after the October 11 commits.
 
 No independent benchmark, configuration change, or fix has been performed.
+
+
+### Selected upstream baseline: DOSBox-X 2026.10.01
+
+The project has selected the official DOSBox-X release published on 2026-10-02 as the provisional SOFIA source baseline, because the user reports **99.6 FPS** in their Quake DOS test with the build downloaded on that date.
+
+Pinned upstream identity:
+- Repository: `joncampbell123/dosbox-x`
+- Release tag: `dosbox-x-v2026.10.01`
+- Tag resolves directly to commit: `b6abbd5980a885f5f310a4088c59a8688d1b116c`
+- Release page: `https://github.com/joncampbell123/dosbox-x/releases/tag/dosbox-x-v2026.10.01`
+- The release was published 2026-10-02 02:29:52 UTC.
+- The tag is a commit object, not an annotated tag.
+
+Important source/release note: the 2026.10.01 release notes explicitly list Sound Blaster AWE32 support and the dynamic-core FPU/MMX routing change. By default, FPU/MMX opcodes are passed to the normal core to support Windows 95 task switching; the notes state that a dosbox.conf option can re-enable dynamic-core handling for DOS games that do not multitask. Therefore, the user's 99.6 FPS result is a benchmark for this release's default behavior, unless their local configuration overrides it. Do not assume that simply switching on dynamic FPU is necessary or beneficial; any such test must be a controlled A/B.
+
+Baseline policy:
+1. Use the exact upstream tag/commit above as the initial source snapshot.
+2. Preserve upstream history and GPL-2.0 notices; do not rewrite or cherry-pick away history.
+3. Keep AWE32/EMU8000 and required ROM workflow, and keep XBRZ enabled.
+4. Make IBM-PC/DOS scope reductions only after tracing dependencies; do not remove PC-98-adjacent shared code blindly.
+5. Establish a clean baseline build before exclusions. No baseline source build has yet been performed.
+6. Preserve the unmodified baseline as a reference and apply one small, documented change at a time.
+7. Retest Quake with the user's same scene/settings after every change; retain the user's 99.6 FPS result as a reported reference, not an independently reproduced benchmark.
+
+The October 18 user's 75 FPS measurement remains a separate downloaded binary result. Its exact asset/build provenance and matching test conditions have not yet been confirmed, so the 24.7% difference is an observed user report, not proof that source changes alone caused the regression.
