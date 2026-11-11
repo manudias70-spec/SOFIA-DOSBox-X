@@ -85,3 +85,27 @@ The timing and workload make the x87 changes a credible regression candidate for
 6. Preserve AWE32 and XBRZ in every candidate build.
 
 No performance test has been run as part of this source-history review. The 90/70 FPS values are user-reported, not independently reproduced.
+
+
+### New benchmark anchor: October 2, 2026
+
+The user has now supplied a more precise result: the DOSBox-X version dated October 2, 2026 reaches **99.6 FPS** in their Quake DOS test. This is a user-reported measurement; the exact packaged build identifier and test conditions are still not captured.
+
+The upstream history for October 2 contains the merge commit:
+
+- `e013b8bf8e27ef878a646049bf5b2e732878d616` — merge of PR #6629, `fpu-overhaul`, authored/committed 2026-10-02 22:56 UTC.
+
+That day's history already includes the main FPU overhaul work, including `FPU: refactor input exception handling`, `FPU: handle exceptional arithmetic inputs`, and `FPU: defer EA denormal exceptions`. Therefore, the user's 99.6 FPS result makes the broad FPU overhaul itself a weaker explanation for the later slowdown: it was already present in the October 2 upstream history. This does not rule out interactions, build differences, or a different October 2 package revision.
+
+The next narrower candidates are changes after this anchor, especially:
+
+- 2026-10-03: `2b7b3e...` — `Wire FISTTP into dynamic CPU cores` (full upstream commit: `2b7b3f4723644a4b4d92ff62fd464944b0e24b0b`).
+- 2026-10-10: `cbf3c4b...` — `Implement x87 numeric exceptions` (full upstream commit: `cbf3c4bb302022afb9f18cbe3e25e8663fb4ce2b`); `3ca845c...` — `Unmask IRQ 13 for configured FPU`; `1609dde...` — `Abort unmasked x87 exception paths`.
+
+Revised investigation order:
+1. Treat the user's October 2 build (99.6 FPS) as the provisional last-known-good anchor.
+2. Identify the exact source commit/package corresponding to that build before assuming the October 2 merge SHA is its exact revision.
+3. Compare that build against the first slower build, first isolating the October 3 dynamic-core FISTTP change, then subsequent x87 exception/IRQ changes.
+4. Keep the same Quake scene, resolution, core/cycles, scaler, AWE32 ROM/audio settings, and host. Do not change AWE32 or XBRZ during this investigation.
+
+No independent benchmark or source bisect has yet been performed. The 99.6 FPS figure is user-reported.
