@@ -109,3 +109,28 @@ Revised investigation order:
 4. Keep the same Quake scene, resolution, core/cycles, scaler, AWE32 ROM/audio settings, and host. Do not change AWE32 or XBRZ during this investigation.
 
 No independent benchmark or source bisect has yet been performed. The 99.6 FPS figure is user-reported.
+
+
+### Second confirmed user benchmark point: October 18 build
+
+The user has now re-tested a downloaded October 18 build and reports **75 FPS**, compared with **99.6 FPS** on the downloaded October 2 build. The difference is 24.7% lower relative to the October 2 result. These are user-reported measurements, not independently reproduced benchmarks. Exact asset names, build provenance, host/configuration, and whether the same test scene/settings were held constant remain to be captured.
+
+The upstream history shows an important candidate change after the October 2 anchor:
+
+- 2026-10-11: `Always use dynamic FPU handling` (`dda3ea7b2414eae571f0e5c8aad0c7b36867bddf`)
+- 2026-10-11: `Handle coprocessor exceptions in dynamic cores` (`290aa213eca273f14506d387ca35e3d623e52e45`)
+- 2026-10-11: `Switch dynamic host FPU for exceptions` (`75ec62b63d358fafa5b9398b57418715ccf191d9`)
+- 2026-10-11: `Handle x87 exceptions in dynamic cores` (`47845490cbc5ab584db467839b99514f574fbe46`)
+
+The October 14 development build changelog also includes the October 10–11 x87 numeric-exception and dynamic-core exception changes. The official 2026.10.01 release notes explicitly warn that routing FPU/MMX opcodes through the normal core can make some DOS games slower, and mention a configuration option for DOS games that do not multitask. This makes the dynamic-core/FPU dispatch changes a strong investigation target, but it is not yet proof of causation.
+
+Do not guess or prescribe a configuration override until the exact option semantics are verified against the tested build's source. In particular, `dynamic_nodhfpu` is a distinct core mode and should not be casually equated with “enable FPU in the dynamic core”; the source uses it to call `CPU_Core_Dyn_X86_SetFPUMode(false)`.
+
+Revised next steps:
+1. Record exact filenames/version strings for both downloaded builds and confirm the October 18 binary is the same Windows/architecture variant as October 2.
+2. Confirm identical Quake executable, benchmark/demo/scene, resolution, XBRZ settings, cycles/core, audio/AWE32 ROM, and host settings.
+3. Inspect the October 11 dynamic-core FPU commits and the actual configuration option introduced/documented for the fallback behavior.
+4. A/B test the October 18 build with only that verified option changed, preserving AWE32 and XBRZ.
+5. If needed, compare builds immediately before and after the October 11 commits.
+
+No independent benchmark, configuration change, or fix has been performed.
