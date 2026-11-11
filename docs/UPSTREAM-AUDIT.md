@@ -50,3 +50,38 @@ A configure switch can prevent a feature from being built without removing its s
 - `Makefile.am`
 
 Upstream source and license notices must be retained when importing code.
+
+## Performance regression investigation: Quake DOS / x87
+
+### User-reported observation
+
+The user reports that early DOSBox-X builds that already included AWE32 emulation delivered approximately 90 FPS in the same Quake DOS use case, while later builds deliver approximately 70 FPS. This is a valuable regression clue, but it is not yet a controlled benchmark: exact build IDs, configuration, host, scene, resolution, scaler, and audio settings still need confirmation.
+
+The AWE32 feature itself is therefore not the first suspect. Preserve AWE32 and its ROM configuration while investigating changes introduced after the faster builds.
+
+### FPU changes found in upstream history
+
+A review of upstream commits around late September and October 2026 shows a substantial x87 refactor beginning before October 10, not just a single change on that date. Relevant commit subjects include:
+
+- 2026-09-28: FPU: extract shared instruction helpers; FPU: use explicit binary64 register type.
+- 2026-09-29 to 2026-10-02: multiple instruction-handler unifications and exception-handling changes.
+- 2026-10-02: FPU: refactor input exception handling; FPU: handle exceptional arithmetic inputs; FPU: defer EA denormal exceptions; merge of fpu-overhaul.
+- 2026-10-03: Wire FISTTP into dynamic CPU cores.
+- 2026-10-10: Implement x87 numeric exceptions; Unmask IRQ 13 for configured FPU; Abort unmasked x87 exception paths.
+
+The October 10 commits alter x87 exception behavior, status handling, IRQ 13, and exception delivery. The wider late-September/early-October FPU overhaul is also a candidate because it predates those final exception commits.
+
+### Working hypothesis and caution
+
+The timing and workload make the x87 changes a credible regression candidate for Quake DOS, which is FPU-intensive. However, commit chronology alone does not prove that these changes caused the reported FPS difference. Do not revert the AWE32 implementation or claim a fix without an A/B benchmark.
+
+### Required A/B plan
+
+1. Identify the exact last-known-good build (about 90 FPS) and first-known-slow build (about 70 FPS), if possible.
+2. Keep the same Quake DOS executable, save/scene, resolution, scaler (XBRZ), cycles/core settings, AWE32 ROM, sound configuration, and host machine.
+3. Build/test the last-known-good revision and later revisions in sequence, changing one revision range at a time.
+4. First isolate the FPU-overhaul range (late September through October 3); then isolate the October 10 exception/IRQ changes.
+5. Record average FPS and frame-time consistency, plus audio glitches and correctness. Verify x87 behavior with compatibility tests before accepting any optimization.
+6. Preserve AWE32 and XBRZ in every candidate build.
+
+No performance test has been run as part of this source-history review. The 90/70 FPS values are user-reported, not independently reproduced.
