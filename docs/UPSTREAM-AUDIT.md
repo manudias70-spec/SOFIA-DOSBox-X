@@ -160,3 +160,73 @@ Baseline policy:
 7. Retest Quake with the user's same scene/settings after every change; retain the user's 99.6 FPS result as a reported reference, not an independently reproduced benchmark.
 
 The October 18 user's 75 FPS measurement remains a separate downloaded binary result. Its exact asset/build provenance and matching test conditions have not yet been confirmed, so the 24.7% difference is an observed user report, not proof that source changes alone caused the regression.
+
+
+## PC-98 / non-IBM platform audit (2026-11-12)
+
+### Revision coverage
+
+This pass audits the requested upstream snapshot `e2b92bb86382a5444ce42157a37138b459ec98b5` (merge PR #6803, 2026-11-09). The upstream `master` head observed during this pass was `78c022931f0ad9e567bcaaefc155fc428d9bdc7e` (2026-11-12). GitHub compare reports master 28 commits ahead of the candidate and no divergence. The key files that define PC-98 selection and build inclusion have identical blob IDs at both revisions: `configure.ac`, `src/dosbox.cpp`, `include/dosbox.h`, `src/hardware/Makefile.am`, and `src/ints/Makefile.am`. The intervening `src/dos/dos.cpp` change was also checked; its diff does not alter PC-98-specific lines. This is a targeted audit, not a full review of all 28 intervening commits.
+
+### Executive finding
+
+There is **no upstream `--disable-pc98` configure switch** in this snapshot. The default machine is VGA, so PC-98 is not activated in an ordinary default run, but its implementation is still compiled into the program and some PC-98 support assets are still packaged. Runtime defaulting to VGA is not a build-time exclusion.
+
+Existing relevant switches remain separate: `--disable-mt32`, `--disable-sdlnet`, `--disable-monitor`, and `--enable-xbrz`. The configure file contains no PC-98 feature conditional comparable to `C_XBRZ` or `C_MT32`.
+
+### Build-system inclusion points
+
+| Build system / area | Confirmed inclusion | Consequence |
+|---|---|---|
+| Autotools hardware | `src/hardware/Makefile.am` adds the `snd_pc98/*` include directories unconditionally and lists `pc98.cpp`, `pc98_fm.cpp`, `pc98_artic.cpp`, the `vga_pc98_*.cpp` units, and the `snd_pc98` C sources in `libhardware_a_SOURCES` (lines 1, 16–23). | PC-98 video/audio units are built even when the selected machine is VGA. |
+| Autotools interrupts | `src/ints/Makefile.am` lists `pc98_lio.cpp` and `int_dosv.cpp` unconditionally (lines 4–8). | PC-98 LIO and DOS/V code are not separately selectable at build time. |
+| Built-in DOS utilities | `src/builtin/Makefile.am` lists `dsxmenu_exe_pc98.cpp` and `cwsdpmi_exe_pc98.cpp`; `include/builtin.h` declares their blobs. | The PC-98-specific utility binaries are compiled into the built-in utility library. Their runtime selection must be traced before removing them. |
+| Visual Studio | `vs/dosbox-x.vcxproj` includes PC-98 include directories in its configuration blocks and explicitly compiles the PC-98 hardware/audio sources, `pc98_lio.cpp`, `int_dosv.cpp`, and PC-98 built-in binaries (notably lines 1172, 1181, 1284–1321). | An Autotools-only option would not produce a PC-98-free Windows build. The Visual Studio project must be updated in parallel. |
+| Packaged resources | `src/Makefile.am` includes `contrib/fonts/FREECG98.BMP` in `res_DATA` without a PC-98 conditional. | The PC-98 fallback font is shipped even if PC-98 runtime support is unused. |
+
+Source permalinks: [configure.ac](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/configure.ac), [hardware Makefile](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/hardware/Makefile.am), [interrupt Makefile](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/ints/Makefile.am), [built-in Makefile](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/builtin/Makefile.am), [Visual Studio project](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/vs/dosbox-x.vcxproj), [resource list](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/Makefile.am).
+
+### Machine selection and shared implementation
+
+- `include/dosbox.h` declares `MCH_PC98`, `IS_PC98_ARCH`, and `PC98_ARCH_CASE` (around lines 129–245). This is the central architecture discriminator.
+- `src/dosbox.cpp` defaults to `MCH_VGA`, then parses `machine=pc98`, `pc9801`, and `pc9821` into `MCH_PC98` (around lines 1225–1291). It also contains PC-98 configuration registration and initialization paths.
+- `src/hardware/vga.cpp` has a distinct PC-98 entry path (`VGA_OnEnterPC98` and phase 2), configures the PC-98 GDC/VRAM model, and skips several ordinary VGA setup operations when `IS_PC98_ARCH` is true. The PC-98 GDC, EGC, DAC, CRTC, CG, and ARTIC implementations are separate translation units, but they operate through shared VGA state, memory, I/O, timer, and rendering infrastructure.
+- The PC-98 path is not confined to those dedicated files. A current-master code-search pass finds `IS_PC98_ARCH` conditionals across many shared modules, including `memory.cpp`, `timer.cpp`, `pic.cpp`, `dma.cpp`, `keyboard.cpp`, `floppy.cpp`, `cmos.cpp`, `ide.cpp`, `vga.cpp`, `bios_keyboard.cpp`, `bios_disk.cpp`, `xms.cpp`, `ems.cpp`, `dos.cpp`, `dos_tables.cpp`, `mouse.cpp`, `shell.cpp`, `sblaster.cpp`, `adlib.cpp`, `gus.cpp`, `mpu401.cpp`, and text/TTF output code. The search returned 68 matching source paths on current master; that count is an index result, not a substitute for a compiler dependency graph.
+- The shared modules implement real behavioral differences, not just menu labels: examples include PC-98 PIT clock rates, PIC behavior, A20 control, keyboard IRQ/scancode handling, memory layout, DOS tables, disk services, and video memory mapping. Deleting a dedicated video file alone would leave compile/link references and shared branches behind.
+
+### ROM, BIOS, and font resources
+
+The PC-98 machine does not require the user to provide a separate machine BIOS image just to start emulation. The upstream PC-98 guide says PC-98 mode starts with the executable alone; font resources are optional. In `src/dosbox.cpp`, the initialization path explicitly notes that PC-98 mode has no VGA BIOS.
+
+Keep the following distinctions:
+
+- `FONT.ROM` is optional character/font data, not the machine BIOS. `src/ints/int10.cpp` expects exactly 288,768 bytes when loading this format.
+- If `FONT.ROM` is unavailable, the code tries Anex86-compatible bitmap fonts and `FREECG98.BMP`, then has an internal Japanese-font fallback path. Upstream packages `FREECG98.BMP` as a resource. The source itself notes uncertainty about whether the Anex86 font dump may legally be incorporated; do not bundle it casually.
+- `SOUND.ROM` is a separate optional 16 KiB PC-98 FM-board sound BIOS image. `src/hardware/pc98_fm.cpp` loads it at physical address `0xCC000` when the PC-98 sound-BIOS option is enabled. If it is absent, the code installs a software INT D2h callback instead. This is not required for ordinary IBM Sound Blaster/AdLib/GUS support.
+
+References: [PC-98 guide](https://github.com/joncampbell123/dosbox-x/wiki/Guide%3APC%E2%80%9098-emulation-in-DOSBox%E2%80%90X), [FONT.ROM and bitmap loading](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/ints/int10.cpp#L1485-L1652), [SOUND.ROM loading and fallback](https://github.com/joncampbell123/dosbox-x/blob/e2b92bb86382a5444ce42157a37138b459ec98b5/src/hardware/pc98_fm.cpp#L367-L427).
+
+### Video, audio, and licensing boundaries
+
+- **Video:** PC-98 GDC/EGC/DAC/CRTC/CG/ARTIC code is comparatively well grouped into named source files. However, `vga.cpp`, `include/vga.h`, memory access, palette handling, and renderer state are shared. The safe first target is conditional compilation of the dedicated PC-98 translation units after their call sites and declarations are guarded—not deletion of generic VGA files.
+- **Audio:** PC-98 FM board emulation is mostly grouped in `pc98_fm.cpp` plus `snd_pc98/*`. It calls shared mixer, PIC/timer, I/O, callback, joystick, and memory services. Standard IBM PC audio units such as Sound Blaster, AdLib/OPL, GUS, MPU-401, and the shared mixer contain PC-98-specific conditionals but are not PC-98-only; retain them.
+- **Attribution:** `CREDITS.md` attributes the PC-98 FM board code and GDC/LIO drawing code to Neko Project II under BSD 3-clause, and JEGA/DOS/V code to nanshiki/Wengier under GPLv2+. Any later pruning must preserve notices for retained code and respect each component's license.
+
+### Other non-IBM or regional modes
+
+These should be treated as separate feature decisions, not folded into a single PC-98 deletion:
+
+- **JEGA / AX:** `machine=jega` maps to `MCH_EGA` with a JEGA flag; it is not a separate machine enum. It shares EGA, INT 10h, font, and DBCS code.
+- **DOS/V and Toshiba J-3100:** configured through the `[dosv]` section and implemented in shared DOS/INT 10h/DBCS paths; `int_dosv.cpp` is in the common interrupt source list. Do not remove generic DBCS/codepage/TTF support as a side effect.
+- **FM Towns:** `MCH_FM_TOWNS` is marked `STUB` in `include/dosbox.h`; `machine=fm_towns` currently maps through VGA plus a special flag. It is not an isolated full machine implementation.
+- **Tandy/PCjr, Amstrad, Olivetti M24/AT&T 6300, MCGA, Hercules, and IBM 3270 PC:** these are PC-compatible or IBM-family machine/video variants, not candidates for blanket removal under SOFIA's stated IBM-PC-compatible scope. Keep them unless a narrower policy explicitly excludes a particular profile.
+
+### Safe decisions and remaining work
+
+1. **Safe now:** leave all PC-98 source files in place; keep the default IBM-compatible VGA machine path; retain XBRZ and standard IBM PC audio; continue using the already verified MT-32 and SDL networking switches. This changes no upstream code and risks no compatibility regression.
+2. **Do not claim PC-98 is excluded today:** it is inactive by default, but still compiled and packaged. There is no upstream PC-98 build switch.
+3. **Future true build-time exclusion:** add a SOFIA-specific `--disable-pc98` / `C_PC98` path only after guarding every PC-98 reference in shared files, splitting the Autotools and Visual Studio source lists, handling PC-98 built-in utility selectors and font resources, and checking all link dependencies. Keep DOS/V/JEGA as separately selectable features (for example, `C_DOSV` / `C_JEGA`) rather than treating them as synonyms for PC-98.
+4. **Do not delete shared files** such as `dosbox.cpp`, `dosbox.h`, `vga.cpp`, `memory.cpp`, `timer.cpp`, `pic.cpp`, `keyboard.cpp`, `bios_keyboard.cpp`, `bios_disk.cpp`, `xms.cpp`, `ems.cpp`, `dos.cpp`, `dos_tables.cpp`, `int10.cpp`, `sblaster.cpp`, `adlib.cpp`, `gus.cpp`, or `mpu401.cpp` based on PC-98 references alone.
+5. **Next step:** establish the exact source tree for the chosen SOFIA baseline, then make a dependency inventory for one feature boundary at a time—first PC-98 GDC/video, then PC-98 FM/audio, then shared architecture guards and built-in resources. Build the unmodified baseline before enabling any exclusion, and test DOS boot, VGA modes, storage, input, Sound Blaster/AdLib/GUS, and Quake DOS with XBRZ after each step.
+
+No source files were deleted, no PC-98 switch was added, and no build or runtime test was executed in this audit.
